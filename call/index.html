@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>StreamCall 3 (Tally & Stable Fix)</title>
     
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <!-- CDN PRINCIPALES: jsdelivr (más estable que unpkg) -->
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@4.3.7/dist/mqtt.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
@@ -84,10 +85,46 @@
         .guest-layout.tally-prev .big-tally-text { display: block; background: #22c55e; color: black; }
 
         @keyframes pulseRed { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        
+        /* Loader de inicialización */
+        #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #3b82f6; font-family: monospace; font-size: 16px; }
+        #loader.hidden { display: none; }
+        .loader-spinner { width: 50px; height: 50px; border: 4px solid #1e293b; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
+    <!-- Loader visible mientras cargan los scripts -->
+    <div id="loader">
+        <div class="loader-spinner"></div>
+        <div id="loader-text">Cargando StreamCall...</div>
+    </div>
+    
     <div id="root"></div>
+
+    <script>
+        // Verificación de carga de librerías
+        window.addEventListener('load', function() {
+            const checks = {
+                'React': typeof React !== 'undefined',
+                'ReactDOM': typeof ReactDOM !== 'undefined',
+                'Babel': typeof Babel !== 'undefined',
+                'Peer': typeof Peer !== 'undefined',
+                'mqtt': typeof mqtt !== 'undefined'
+            };
+            
+            const missing = Object.keys(checks).filter(k => !checks[k]);
+            
+            if (missing.length > 0) {
+                document.getElementById('loader-text').innerHTML = 
+                    '<span style="color:#ef4444">ERROR: No cargaron:<br>' + missing.join(', ') + '</span><br><br>' +
+                    '<span style="color:#64748b;font-size:12px">Probá recargar con Ctrl+F5<br>o verificá tu conexión a internet.</span>';
+                document.querySelector('.loader-spinner').style.borderTopColor = '#ef4444';
+            } else {
+                document.getElementById('loader').classList.add('hidden');
+            }
+        });
+    </script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
@@ -105,7 +142,7 @@
             return sharedAudioCtx;
         };
 
-        const VideoPlayer = ({ stream, muted, className }) => {
+        const VideoPlayer = ({ stream, muted, className, style }) => {
             const videoRef = useRef(null);
             useEffect(() => {
                 if (videoRef.current && stream) {
@@ -113,7 +150,7 @@
                     videoRef.current.play().catch(e => console.log("Play interceptado"));
                 }
             }, [stream]);
-            return <video ref={videoRef} className={className} autoPlay playsInline muted={muted}></video>;
+            return <video ref={videoRef} className={className} style={style} autoPlay playsInline muted={muted}></video>;
         };
 
         const VUMeter = ({ stream }) => {
@@ -290,7 +327,7 @@
 
         // --- OBS RENDERER ---
         const ObsView = ({ roomName, slotId }) => {
-            const [status, setStatus] = useState(`INICIANDO OBS...`);
+            const [status, setStatus] = useState('INICIANDO OBS...');
             const [stream, setStream] = useState(null);
             const peer = useRef(null);
             const videoRef = useRef(null);
@@ -419,9 +456,13 @@
                 mq.on('connect', () => { mq.subscribe(`sc_tally/${roomName.toUpperCase()}/${slotId}`); });
                 
                 mq.on('message', (t, msg) => {
-                    const data = msg.toString();
-                    // FIX CLAVE DE TALLY: La palabra exacta para coincidir
-                    if (t.includes('tally')) setTally(JSON.parse(data).state);
+                    try {
+                        const data = msg.toString();
+                        if (t.includes('tally')) {
+                            const parsed = JSON.parse(data);
+                            setTally(parsed.state);
+                        }
+                    } catch(e) { console.log('Error tally:', e); }
                 });
                 
                 const init = async () => {
@@ -492,7 +533,7 @@
                     )}
                     
                     <div className="guest-overlay">
-                        <div className="text-[10px] font-bold text-gray-400 uppercase mr-2">CH {slotId}</div>
+                        <div className="text-xs font-bold text-gray-400 uppercase mr-2">CH {slotId}</div>
                         <div className={`mic-btn ${micMuted?'off':'on'}`} onClick={toggleMic}>{micMuted ? '🔇' : '🎤'}</div>
                         <div className={`mic-btn ${camOff?'off':'on'}`} onClick={toggleCam}>{camOff ? '🚫' : '📷'}</div>
                         <div className="mic-btn" style={{ background: '#3b82f6' }} onClick={switchCamera}>🔄</div>
